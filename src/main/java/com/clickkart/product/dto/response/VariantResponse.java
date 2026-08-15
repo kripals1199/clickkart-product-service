@@ -27,7 +27,12 @@ public record VariantResponse(
                 entity.getMrp(),
                 entity.getSellingPrice(),
                 entity.discountPercentage(),
-                entity.getAttributes(),
+                // Copied, not passed through. attributes is a LAZY @ElementCollection, so handing
+                // the proxy to the caller defers loading until Jackson serializes it - by which
+                // point the transaction has closed and it throws LazyInitializationException.
+                // Copying here forces the load while a session is still open. (open-in-view is
+                // deliberately false, so there is no session at serialization time.)
+                Map.copyOf(entity.getAttributes()),
                 entity.isActive());
     }
 }
