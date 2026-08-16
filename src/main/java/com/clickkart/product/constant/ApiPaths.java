@@ -43,6 +43,10 @@ public final class ApiPaths {
     public static final String INTERNAL_PRODUCT = INTERNAL_BASE + "/{publicId}";
     public static final String INTERNAL_VARIANT_BY_SKU = INTERNAL_BASE + "/variants/{sku}";
 
+    /** This service's own tamper-evident activity log. ADMIN only. */
+    public static final String ADMIN_AUDIT = BASE + "/audit";
+    public static final String ADMIN_AUDIT_VERIFY = ADMIN_AUDIT + "/verification";
+
     public static final String ACTUATOR_HEALTH = "/actuator/health";
     public static final String ACTUATOR_HEALTH_WILDCARD = "/actuator/health/**";
     public static final String ACTUATOR_PROMETHEUS = "/actuator/prometheus";
