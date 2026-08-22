@@ -44,6 +44,11 @@ public class AuditTrailServiceImpl implements AuditTrailService {
     private final AuditLogServiceClient auditLogServiceClient;
 
     @Override
+    // Annotated even though this only delegates: the delegation goes through `this`, so the
+    // proxy never sees it and the target's own @Transactional would be skipped. Callers that
+    // already have a transaction join this one; callers that have none - placeOrder, which is
+    // deliberately not transactional - get the one lockForUpdate needs.
+    @Transactional(rollbackFor = Exception.class)
     public void record(
             String correlationId,
             String actor,
