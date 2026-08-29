@@ -2,9 +2,13 @@
 package com.clickkart.product.dto.response;
 
 import com.clickkart.product.entity.ProductEntity;
+import com.clickkart.product.entity.ProductPropertyValue;
 import com.clickkart.product.enums.ProductStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -28,6 +32,8 @@ public record ProductResponse(
         String sellerPublicId,
         ProductStatus status,
         List<VariantResponse> variants,
+        /** Recorded specification values, keyed by property name. Never null; empty when none. */
+        Map<String, List<String>> properties,
         String rejectionReason,
         Instant reviewedAt,
         Instant createdDate,
@@ -48,6 +54,7 @@ public record ProductResponse(
                         .filter(variant -> variant.isActive())
                         .map(VariantResponse::from)
                         .toList(),
+                propertiesOf(entity),
                 null,
                 null,
                 entity.getCreatedDate(),
@@ -66,9 +73,25 @@ public record ProductResponse(
                 entity.getSellerPublicId(),
                 entity.getStatus(),
                 entity.getVariants().stream().map(VariantResponse::from).toList(),
+                propertiesOf(entity),
                 entity.getRejectionReason(),
                 entity.getReviewedAt(),
                 entity.getCreatedDate(),
                 entity.getUpdatedDate());
+    }
+    /**
+     * Regroups the flat value rows back into one entry per property.
+     *
+     * <p>Sorted by the stored order so a multi-valued answer comes back in the order the seller
+     * chose rather than in whatever order the rows happened to be read.
+     */
+    private static Map<String, List<String>> propertiesOf(ProductEntity entity) {
+        Map<String, List<String>> grouped = new LinkedHashMap<>();
+        entity.getProperties().stream()
+                .sorted(java.util.Comparator.comparingInt(ProductPropertyValue::getValueOrder))
+                .forEach(value -> grouped
+                        .computeIfAbsent(value.getPropertyName(), key -> new java.util.ArrayList<>())
+                        .add(value.getPropertyValue()));
+        return grouped;
     }
 }

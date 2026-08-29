@@ -3,6 +3,9 @@ package com.clickkart.product.entity;
 
 import com.clickkart.product.enums.ProductStatus;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,6 +16,9 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AccessLevel;
@@ -100,6 +106,25 @@ public class ProductEntity extends BaseEntity {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<ProductVariantEntity> variants = new ArrayList<>();
 
+    /**
+     * The seller's answers to the properties Category Service says apply to this product's category.
+     *
+     * <p>Which properties those are is not this service's business, and deliberately so: the
+     * structure is catalogue governance, owned next door, while the values belong to the product.
+     * The only thing crossing that boundary is the property name, which Category Service guarantees
+     * is stable. Nothing here validates against the master data — that check happens where the
+     * definitions live.
+     *
+     * <p>A collection rather than a map, unlike the variant attributes beside it, because a
+     * multi-select property is several answers to one question. See {@link ProductPropertyValue}.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "product_properties",
+            joinColumns = @JoinColumn(name = "product_id"),
+            indexes = @Index(name = "idx_product_properties_product", columnList = "product_id"))
+    private Set<ProductPropertyValue> properties = new LinkedHashSet<>();
+
     private ProductEntity(String publicId, String sellerPublicId) {
         this.publicId = publicId;
         this.sellerPublicId = sellerPublicId;
@@ -118,6 +143,21 @@ public class ProductEntity extends BaseEntity {
         this.description = description;
         this.brand = brand;
         this.categoryPublicId = categoryPublicId;
+    }
+
+    /**
+     * Replaces every recorded property value.
+     *
+     * <p>Wholesale rather than a merge, because a save carries the complete set of answers: a
+     * property the seller cleared is absent from the incoming set, and merging would silently keep
+     * the old value. Clearing in place rather than reassigning the field is what lets the
+     * persistence provider diff the collection instead of deleting and reinserting every row.
+     */
+    public void replaceProperties(Collection<ProductPropertyValue> incoming) {
+        properties.clear();
+        if (incoming != null) {
+            properties.addAll(incoming);
+        }
     }
 
     public void addVariant(ProductVariantEntity variant) {

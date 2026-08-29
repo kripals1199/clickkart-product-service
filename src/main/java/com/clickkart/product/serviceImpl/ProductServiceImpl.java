@@ -9,6 +9,7 @@ import com.clickkart.product.dto.request.VariantRequest;
 import com.clickkart.product.dto.response.ProductResponse;
 import com.clickkart.product.dto.response.PurchasableVariantResponse;
 import com.clickkart.product.entity.ProductEntity;
+import com.clickkart.product.entity.ProductPropertyValue;
 import com.clickkart.product.entity.ProductVariantEntity;
 import com.clickkart.product.enums.ProductAuditAction;
 import com.clickkart.product.enums.ProductStatus;
@@ -33,6 +34,7 @@ import com.clickkart.product.web.RequestMetadata;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -102,6 +104,7 @@ public class ProductServiceImpl implements ProductService {
                 request.name().trim(), slug, trimToNull(request.description()),
                 trimToNull(request.brand()), request.categoryPublicId().trim());
         request.variants().forEach(variantRequest -> product.addVariant(buildVariant(variantRequest)));
+        product.replaceProperties(toPropertyValues(request.properties()));
         productRepository.saveAndFlush(product);
 
         // The category is NOT validated here. Drafting against a category that is being reorganised
@@ -141,6 +144,12 @@ public class ProductServiceImpl implements ProductService {
         List<ProductVariantEntity> existing = List.copyOf(product.getVariants());
         existing.forEach(product::removeVariant);
         request.variants().forEach(variantRequest -> product.addVariant(buildVariant(variantRequest)));
+
+        // Wholesale, like the variants above: the request carries the complete set of answers, so a
+        // property the seller cleared is absent from it and merging would keep a stale value. This
+        // is also what drops values that no longer apply after a category change - the form has
+        // already stopped sending them.
+        product.replaceProperties(toPropertyValues(request.properties()));
         productRepository.saveAndFlush(product);
 
         auditTrailService.record(correlationId, sellerPublicId, ProductAuditAction.PRODUCT_UPDATED, metadata,
@@ -372,5 +381,36 @@ public class ProductServiceImpl implements ProductService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+    /**
+     * Flattens the request map into one row per answer.
+     *
+     * <p>Blank values are dropped rather than stored: an empty string is how a form says "cleared",
+     * and recording it would make a property look answered to every reader that only checks for
+     * presence - including the completeness count the seller is shown.
+     *
+     * <p>Nothing here checks the values against the master data. Category Service owns which
+     * properties apply and what each accepts; restating those rules in this service would create a
+     * second answer to the same question, and the two would drift.
+     */
+    private static List<ProductPropertyValue> toPropertyValues(Map<String, List<String>> properties) {
+        if (properties == null || properties.isEmpty()) {
+            return List.of();
+        }
+
+        List<ProductPropertyValue> flattened = new java.util.ArrayList<>();
+        properties.forEach((name, values) -> {
+            if (name == null || name.isBlank() || values == null) {
+                return;
+            }
+            int order = 0;
+            for (String value : values) {
+                if (value == null || value.isBlank()) {
+                    continue;
+                }
+                flattened.add(ProductPropertyValue.of(name.trim(), value.trim(), order++));
+            }
+        });
+        return flattened;
     }
 }
