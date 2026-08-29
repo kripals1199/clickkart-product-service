@@ -3,9 +3,13 @@ package com.clickkart.product.repository;
 
 import com.clickkart.product.entity.ProductEntity;
 import com.clickkart.product.enums.ProductStatus;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -22,8 +26,15 @@ public final class ProductSpecifications {
      * publishes other people's unreviewed and rejected listings. Putting it in the specification
      * means no future call site can compose a search without it.
      */
+    /**
+     * @param properties one entry per facet the shopper has chosen, keyed by the property name,
+     *                   with the values accepted for it. Entries are ANDed and values within an
+     *                   entry are ORed - "RAM is 8 or 12, AND Colour is Black" is what ticking two
+     *                   RAM boxes and one colour means.
+     */
     public static Specification<ProductEntity> publicSearch(
-            String query, String categoryPublicId, String brand, BigDecimal minPrice, BigDecimal maxPrice) {
+            String query, String categoryPublicId, String brand, BigDecimal minPrice, BigDecimal maxPrice,
+            Map<String, List<String>> properties) {
         return (root, criteriaQuery, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.equal(root.get("status"), ProductStatus.ACTIVE));
@@ -57,6 +68,33 @@ public final class ProductSpecifications {
                 // The join multiplies rows when several variants match, so without this a product
                 // would appear once per matching variant in the result page.
                 criteriaQuery.distinct(true);
+            }
+
+            // Specification facets.
+            //
+            // One correlated EXISTS per chosen property, never a join per property and never one
+            // join reused. A product answering RAM=8 AND Colour=Black holds two rows in
+            // product_properties, and a single join cannot satisfy both conditions at once - the
+            // same row would have to be two things - so it silently matches nothing. That failure
+            // returns an empty page rather than an error, which is the worst kind.
+            if (properties != null) {
+                for (Map.Entry<String, List<String>> facet : properties.entrySet()) {
+                    String propertyName = facet.getKey();
+                    List<String> wanted = facet.getValue();
+                    if (propertyName == null || propertyName.isBlank() || wanted == null || wanted.isEmpty()) {
+                        continue;
+                    }
+
+                    Subquery<Long> sub = criteriaQuery.subquery(Long.class);
+                    Root<ProductEntity> subProduct = sub.from(ProductEntity.class);
+                    Join<Object, Object> values = subProduct.join("properties");
+                    sub.select(builder.literal(1L))
+                            .where(builder.and(
+                                    builder.equal(subProduct.get("id"), root.get("id")),
+                                    builder.equal(values.get("propertyName"), propertyName),
+                                    values.get("propertyValue").in(wanted)));
+                    predicates.add(builder.exists(sub));
+                }
             }
 
             return builder.and(predicates.toArray(new Predicate[0]));

@@ -81,11 +81,14 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public Page<ProductResponse> search(
             String query, String categoryPublicId, String brand, BigDecimal minPrice, BigDecimal maxPrice,
-            Pageable pageable) {
+            Map<String, List<String>> properties, Pageable pageable) {
         // The ACTIVE filter is baked into the specification rather than left to this call site, so a
         // future caller cannot compose a search that quietly exposes drafts.
         return productRepository
-                .findAll(ProductSpecifications.publicSearch(query, categoryPublicId, brand, minPrice, maxPrice), pageable)
+                .findAll(
+                        ProductSpecifications.publicSearch(
+                                query, categoryPublicId, brand, minPrice, maxPrice, properties),
+                        pageable)
                 .map(ProductResponse::forCustomer);
     }
 

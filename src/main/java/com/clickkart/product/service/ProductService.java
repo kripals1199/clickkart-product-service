@@ -1,6 +1,8 @@
 // src/main/java/com/clickkart/product/service/ProductService.java
 package com.clickkart.product.service;
 
+import java.util.List;
+import java.util.Map;
 import com.clickkart.product.dto.request.ProductRequest;
 import com.clickkart.product.dto.request.ReviewDecisionRequest;
 import com.clickkart.product.dto.response.ProductResponse;
@@ -27,7 +29,7 @@ public interface ProductService {
     /** Free-text plus optional category, brand and price filters. ACTIVE only. */
     Page<ProductResponse> search(
             String query, String categoryPublicId, String brand,
-            java.math.BigDecimal minPrice, java.math.BigDecimal maxPrice, Pageable pageable);
+            java.math.BigDecimal minPrice, java.math.BigDecimal maxPrice, Map<String, List<String>> properties, Pageable pageable);
 
     // --- seller ---------------------------------------------------------
 
