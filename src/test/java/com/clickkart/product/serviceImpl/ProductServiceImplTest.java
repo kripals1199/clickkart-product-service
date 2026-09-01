@@ -76,6 +76,8 @@ class ProductServiceImplTest {
     @Mock private CategoryServiceClient categoryServiceClient;
     @Mock private UserServiceClient userServiceClient;
     @Mock private AuditTrailService auditTrailService;
+    // Mocked: the price history is its own concern, with its own test against a real table.
+    @Mock private PriceHistoryRecorder priceHistoryRecorder;
 
     private ProductServiceImpl service;
 
@@ -86,7 +88,7 @@ class ProductServiceImplTest {
         properties.setUserServiceApiKey("user-key");
         service = new ProductServiceImpl(
                 productRepository, variantRepository, categoryServiceClient, userServiceClient,
-                auditTrailService, properties);
+                auditTrailService, priceHistoryRecorder, properties);
         when(productRepository.saveAndFlush(any(ProductEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         // Default happy path for both downstreams; individual tests override.

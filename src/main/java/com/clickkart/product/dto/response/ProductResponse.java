@@ -73,7 +73,14 @@ public record ProductResponse(
         List<OfferResponse> offers,
 
         /** Sections 26 and 27. Null until the listing has been saved at least once. */
-        Instant lastEditedAt) {
+        Instant lastEditedAt,
+
+        /**
+         * The rating shoppers see. Null average until the first review - "not rated yet" and
+         * "rated zero" are different claims, and a listing page renders them differently.
+         */
+        BigDecimal ratingAverage,
+        int ratingCount) {
 
     /** Public catalog view - no moderation detail, and only variants that are on sale. */
     public static ProductResponse forCustomer(ProductEntity entity) {
@@ -120,7 +127,10 @@ public record ProductResponse(
                         .filter(offer -> offer.isLiveAt(Instant.now()))
                         .map(offer -> OfferResponse.from(offer, Instant.now()))
                         .toList(),
-                null);
+                null,
+                // Shown to customers - the stars on a listing tile are exactly this.
+                entity.getRatingAverage(),
+                entity.getRatingCount());
     }
 
     /** Seller and operator view - every variant, plus why it was sent back. */
@@ -164,7 +174,9 @@ public record ProductResponse(
                 entity.getOffers().stream()
                         .map(offer -> OfferResponse.from(offer, Instant.now()))
                         .toList(),
-                entity.getLastEditedAt());
+                entity.getLastEditedAt(),
+                entity.getRatingAverage(),
+                entity.getRatingCount());
     }
     /**
      * Regroups the flat value rows back into one entry per property.

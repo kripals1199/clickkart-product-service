@@ -92,6 +92,7 @@ public class SecurityConfig {
             // Single-segment wildcards, so these reach /PRD-x/reviews and /PRD-x/reviews/summary
             // and deliberately do NOT reach /PRD-x/reviews/mine - that one needs a session and
             // falls through to authenticated() below.
+            ApiPaths.BASE + "/PRD-*/price-drop",
             ApiPaths.BASE + "/PRD-*/reviews",
             ApiPaths.BASE + "/PRD-*/reviews/summary");
 

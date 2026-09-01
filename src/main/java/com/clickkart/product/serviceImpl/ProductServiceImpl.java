@@ -34,6 +34,7 @@ import com.clickkart.product.service.AuditTrailService;
 import com.clickkart.product.service.ProductService;
 import com.clickkart.product.util.SlugGenerator;
 import com.clickkart.product.web.RequestMetadata;
+import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +61,7 @@ public class ProductServiceImpl implements ProductService {
     private final CategoryServiceClient categoryServiceClient;
     private final UserServiceClient userServiceClient;
     private final AuditTrailService auditTrailService;
+    private final PriceHistoryRecorder priceHistoryRecorder;
     private final ProductProperties productProperties;
 
     // ---------------------------------------------------------- public catalog
@@ -98,6 +100,24 @@ public class ProductServiceImpl implements ProductService {
     // ----------------------------------------------------------------- seller
 
     @Override
+    @Transactional(readOnly = true)
+    public Integer priceDropPercent(String publicId) {
+        ProductEntity product = productRepository
+                .findByPublicId(publicId)
+                .orElseThrow(() -> new ProductNotFoundException(publicId));
+
+        // The cheapest sellable variant, because that is the price the storefront shows. Measuring
+        // the drop on any other variant would advertise a saving on something the shopper is not
+        // being quoted.
+        return product.getVariants().stream()
+                .filter(ProductVariantEntity::isActive)
+                .min(java.util.Comparator.comparing(ProductVariantEntity::getSellingPrice))
+                .map(variant -> priceHistoryRecorder.dropPercent(
+                        publicId, variant.getSku(), variant.getSellingPrice()))
+                .orElse(null);
+    }
+
+    @Override
     @Transactional
     public ProductResponse createDraft(
             String sellerPublicId, ProductRequest request, String correlationId, RequestMetadata metadata) {
@@ -113,6 +133,8 @@ public class ProductServiceImpl implements ProductService {
         product.replaceProperties(toPropertyValues(request.properties()));
         applyListingDetail(product, request);
         productRepository.saveAndFlush(product);
+        // After the flush, so the product has an id for the history rows to hang off.
+        priceHistoryRecorder.record(product, Instant.now());
 
         // The category is NOT validated here. Drafting against a category that is being reorganised
         // should not fail; what must not happen is going on sale against one. That check is at
@@ -165,6 +187,8 @@ public class ProductServiceImpl implements ProductService {
         // specification, saves, and the value is still there. Measured against Postgres, not
         // deduced - the same clear() persists correctly the moment merge is out of the way.
         productRepository.flush();
+        // After the flush, so the SKUs read here are the ones actually stored.
+        priceHistoryRecorder.record(product, Instant.now());
 
         auditTrailService.record(correlationId, sellerPublicId, ProductAuditAction.PRODUCT_UPDATED, metadata,
                 "publicId=" + publicId + " slug=" + slug + " variants=" + request.variants().size());

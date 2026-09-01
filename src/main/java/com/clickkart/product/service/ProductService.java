@@ -19,6 +19,12 @@ import org.springframework.data.domain.Pageable;
  */
 public interface ProductService {
 
+    /**
+     * How far this listing's cheapest variant has fallen from its high in the window, as a
+     * percentage, or null when it has not fallen far enough to be worth saying.
+     */
+    Integer priceDropPercent(String publicId);
+
     // --- public catalog -------------------------------------------------
 
     /** Only ACTIVE listings, and only their active variants. */

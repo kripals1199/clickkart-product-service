@@ -44,6 +44,16 @@ public class ProductProperties {
      */
     private String orderServiceApiKey;
 
+    /**
+     * How far back a price drop is measured. Long enough that a genuine reduction is still visible
+     * a fortnight later, short enough that last quarter's price cannot be dressed up as today's
+     * saving.
+     */
+    private int priceDropWindowDays = 30;
+
+    /** Below this, a drop is noise on a listing tile rather than a reason to look. */
+    private int minPriceDropPercent = 5;
+
     /** CORS allow-list. Defence in depth - this service is independently reachable. */
     private String allowedOrigins = "http://localhost:4200";
 

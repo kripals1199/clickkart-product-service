@@ -68,6 +68,20 @@ public class ProductCatalogController {
         return envelope(page, request);
     }
 
+    /**
+     * Null data when the price has not dropped, rather than a 404 or a zero.
+     *
+     * <p>"This has not fallen" is a perfectly good answer to the question, and the client renders
+     * nothing for it - which is also what it renders for zero, so returning zero would only invite
+     * someone to draw a "0% off" badge.
+     */
+    @Operation(summary = "How far this listing's price has fallen recently")
+    @GetMapping(ApiPaths.PRICE_DROP)
+    public ResponseEntity<ApiResponse<Integer>> priceDrop(
+            @PathVariable String publicId, HttpServletRequest request) {
+        return envelope(productService.priceDropPercent(publicId), request);
+    }
+
     @Operation(summary = "Fetch one product by its stable public id")
     @GetMapping(ApiPaths.BY_PUBLIC_ID)
     public ResponseEntity<ApiResponse<ProductResponse>> byPublicId(

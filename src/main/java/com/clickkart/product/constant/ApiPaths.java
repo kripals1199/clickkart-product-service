@@ -53,6 +53,16 @@ public final class ApiPaths {
      * for, and hiding them behind a sign-in would make the ratings on the listing pages
      * unexplainable. Writing needs a session, because a review has an author.
      */
+    /**
+     * How far this listing's price has fallen from its high in the window.
+     *
+     * <p>Its own endpoint rather than a field on the product, and asked only by the detail page.
+     * A listing grid shows dozens of products at once, and a per-product history query behind each
+     * tile is the one-plus-N this codebase avoids elsewhere. A shopper reading one product can
+     * afford one more query; a shopper scanning a grid cannot afford thirty.
+     */
+    public static final String PRICE_DROP = BY_PUBLIC_ID + "/price-drop";
+
     public static final String REVIEWS = BY_PUBLIC_ID + "/reviews";
     public static final String REVIEW_SUMMARY = REVIEWS + "/summary";
     public static final String REVIEW_MINE = REVIEWS + "/mine";

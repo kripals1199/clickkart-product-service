@@ -26,6 +26,7 @@ import com.clickkart.product.feign.CategoryServiceClient;
 import com.clickkart.product.feign.CategoryValidationApiResponse;
 import com.clickkart.product.feign.SellerProfileApiResponse;
 import com.clickkart.product.feign.UserServiceClient;
+import com.clickkart.product.repository.ProductPriceHistoryRepository;
 import com.clickkart.product.repository.ProductRepository;
 import com.clickkart.product.repository.ProductVariantRepository;
 import com.clickkart.product.service.AuditTrailService;
@@ -121,6 +122,7 @@ class ProductServiceImplPostgresIT {
                 .addAnnotatedClass(ProductMediaEntity.class)
                 .addAnnotatedClass(ProductOfferEntity.class)
                 .addAnnotatedClass(BrandEntity.class)
+                .addAnnotatedClass(com.clickkart.product.entity.ProductPriceHistoryEntity.class)
                 .setProperty("hibernate.connection.driver_class", "org.postgresql.Driver")
                 .setProperty("hibernate.connection.url", URL)
                 .setProperty("hibernate.connection.username", USER)
@@ -215,9 +217,15 @@ class ProductServiceImplPostgresIT {
         properties.setCategoryServiceApiKey("it");
         properties.setUserServiceApiKey("it");
 
+        // The real recorder, not a stub: it writes to a table this test can read back, which is
+        // the only way to see that a price change is recorded and an unchanged price is not.
+        ProductPriceHistoryRepository priceHistory =
+                repositories.getRepository(ProductPriceHistoryRepository.class);
+
         service = new ProductServiceImpl(
                 products, variants, categoryAlwaysAssignable(), sellerAlwaysVerified(),
-                auditThatRecordsNothing(), properties);
+                auditThatRecordsNothing(), new PriceHistoryRecorder(priceHistory, properties),
+                properties);
     }
 
     @AfterEach
