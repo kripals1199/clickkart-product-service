@@ -518,8 +518,21 @@ class ProductServiceImplPostgresIT {
     /* Hand-written stubs rather than Mockito: these have one behaviour each and no verification. */
 
     private static UserServiceClient sellerAlwaysVerified() {
-        return (sellerPublicId, correlationId, apiKey) -> new SellerProfileApiResponse(
-                true, new SellerProfileApiResponse.Data(SELLER, "IT Traders", "VERIFIED"));
+        // Two methods now that reviews resolve a byline, so this cannot be a lambda.
+        return new UserServiceClient() {
+            @Override
+            public SellerProfileApiResponse getSellerProfile(
+                    String sellerPublicId, String correlationId, String apiKey) {
+                return new SellerProfileApiResponse(
+                        true, new SellerProfileApiResponse.Data(SELLER, "IT Traders", "VERIFIED"));
+            }
+
+            @Override
+            public com.clickkart.product.feign.UserProfileApiResponse getProfile(
+                    String userPublicId, String correlationId, String apiKey) {
+                throw new UnsupportedOperationException("not exercised by this test");
+            }
+        };
     }
 
     private static CategoryServiceClient categoryAlwaysAssignable() {

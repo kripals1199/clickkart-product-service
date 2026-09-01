@@ -15,5 +15,13 @@ public enum ProductAuditAction {
     PRODUCT_ARCHIVED,
     VARIANT_ADDED,
     VARIANT_UPDATED,
+
+    /** A customer wrote or replaced their review. Kept because it moves a product's public rating. */
+    REVIEW_SUBMITTED,
+    REVIEW_DELETED,
+
+    /** Operator actions on someone else's words, which is exactly the kind that needs a trail. */
+    REVIEW_HIDDEN,
+    REVIEW_RESTORED,
     VARIANT_REMOVED
 }

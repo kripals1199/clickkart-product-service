@@ -192,6 +192,23 @@ public class ProductEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private Set<DeliveryOption> deliveryOptions = new LinkedHashSet<>();
 
+    /**
+     * The rating shoppers see, maintained by ReviewServiceImpl on every review write.
+     *
+     * <p>Denormalised on purpose. A listing page shows stars on every tile, and computing avg()
+     * per row turns one query into one-plus-N. Recomputed from product_reviews rather than
+     * incremented, so an edited or hidden review cannot leave the number drifting - drift in a
+     * figure a shopper chooses by is worse than one extra statement per write.
+     *
+     * <p>Null, not zero, until the first published review. Zero would sort an unrated product
+     * below a genuinely bad one and render as no stars rather than as "not rated yet".
+     */
+    @Column(name = "rating_average", precision = 3, scale = 2)
+    private BigDecimal ratingAverage;
+
+    @Column(name = "rating_count", nullable = false)
+    private int ratingCount;
+
     /** Section 21. A row per keyword, so a comma inside one is not a separator. */
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
@@ -328,6 +345,18 @@ public class ProductEntity extends BaseEntity {
         if (keywords != null) {
             this.keywords.addAll(keywords);
         }
+    }
+
+    /**
+     * Replaces the cached aggregate with what the reviews table actually says.
+     *
+     * <p>Takes both figures together rather than exposing two setters: an average without its
+     * count is a number nobody can weigh, and setting them separately invites a caller to update
+     * one and forget the other.
+     */
+    public void applyRatingSummary(BigDecimal average, int count) {
+        this.ratingAverage = average;
+        this.ratingCount = count;
     }
 
     /** Sections 26 and 27. Stamped on every write so the header can say when, not just that. */

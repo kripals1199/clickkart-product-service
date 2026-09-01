@@ -85,7 +85,15 @@ public class SecurityConfig {
             // The customer-facing brand filter reads this too, so it cannot need a token. Only
             // GET is permitted here; POST falls through to authenticated, and the controller
             // requires ROLE_SELLER on top.
-            ApiPaths.BRANDS);
+            ApiPaths.BRANDS,
+            // Reviews read anonymously: a shopper deciding whether to buy is who they are for,
+            // and a sign-in wall would leave the stars on the listing pages unexplainable.
+            //
+            // Single-segment wildcards, so these reach /PRD-x/reviews and /PRD-x/reviews/summary
+            // and deliberately do NOT reach /PRD-x/reviews/mine - that one needs a session and
+            // falls through to authenticated() below.
+            ApiPaths.BASE + "/PRD-*/reviews",
+            ApiPaths.BASE + "/PRD-*/reviews/summary");
 
     private static final String ADMIN_WILDCARD = ApiPaths.ADMIN_BASE + "/**";
 

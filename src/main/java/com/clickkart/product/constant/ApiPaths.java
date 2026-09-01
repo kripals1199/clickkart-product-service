@@ -48,6 +48,18 @@ public final class ApiPaths {
     /** Where stored media is served back from. Public - a product image is not a secret. */
     public static final String MEDIA_FILE = BASE + "/media/{filename}";
 
+    /**
+     * Reviews. Reading is public - a shopper deciding whether to buy is exactly who reviews are
+     * for, and hiding them behind a sign-in would make the ratings on the listing pages
+     * unexplainable. Writing needs a session, because a review has an author.
+     */
+    public static final String REVIEWS = BY_PUBLIC_ID + "/reviews";
+    public static final String REVIEW_SUMMARY = REVIEWS + "/summary";
+    public static final String REVIEW_MINE = REVIEWS + "/mine";
+
+    /** Operator actions on a single review, addressed by its own id rather than the product's. */
+    public static final String ADMIN_REVIEW_HIDE = BASE + "/admin/reviews/{reviewPublicId}/hidden";
+
     /** Section 6. Reading is public - the customer brand filter needs the same list. */
     public static final String BRANDS = "/api/v1/brands";
 
