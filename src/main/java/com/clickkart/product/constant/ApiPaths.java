@@ -32,6 +32,25 @@ public final class ApiPaths {
     public static final String SELLER_VARIANTS = SELLER_BASE + "/{publicId}/variants";
     public static final String SELLER_VARIANT = SELLER_BASE + "/{publicId}/variants/{sku}";
 
+    /* ---- sections 8 to 10 and 13: the Add Product workspace ---- */
+
+    public static final String SELLER_MEDIA_UPLOAD = SELLER_BASE + "/media";
+    public static final String SELLER_MEDIA_LIBRARY = SELLER_BASE + "/media/library";
+    public static final String SELLER_MEDIA = SELLER_BASE + "/{publicId}/media";
+    public static final String SELLER_MEDIA_ONE = SELLER_MEDIA + "/{mediaPublicId}";
+    public static final String SELLER_MEDIA_ORDER = SELLER_MEDIA + "/order";
+    public static final String SELLER_MEDIA_PRIMARY = SELLER_MEDIA_ONE + "/primary";
+    public static final String SELLER_MEDIA_FILE = SELLER_MEDIA_ONE + "/file";
+
+    public static final String SELLER_OFFERS = SELLER_BASE + "/{publicId}/offers";
+    public static final String SELLER_OFFER_ONE = SELLER_OFFERS + "/{offerPublicId}";
+
+    /** Where stored media is served back from. Public - a product image is not a secret. */
+    public static final String MEDIA_FILE = BASE + "/media/{filename}";
+
+    /** Section 6. Reading is public - the customer brand filter needs the same list. */
+    public static final String BRANDS = "/api/v1/brands";
+
     /** ADMIN moderation. */
     public static final String ADMIN_BASE = BASE + "/admin";
     public static final String ADMIN_QUEUE = ADMIN_BASE + "/review-queue";

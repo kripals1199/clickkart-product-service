@@ -18,7 +18,15 @@ public record VariantResponse(
         BigDecimal sellingPrice,
         int discountPercentage,
         Map<String, String> attributes,
-        boolean active) {
+        boolean active,
+        /**
+         * Section 11. Populated only for the seller who owns the listing.
+         *
+         * <p>Null on every customer-facing response, and by omission rather than by a filter
+         * downstream: what a seller paid is competitive information, and a field that is only
+         * sometimes stripped is one refactor away from being always sent.
+         */
+        java.math.BigDecimal costPrice) {
 
     public static VariantResponse from(ProductVariantEntity entity) {
         return new VariantResponse(
@@ -33,6 +41,16 @@ public record VariantResponse(
                 // Copying here forces the load while a session is still open. (open-in-view is
                 // deliberately false, so there is no session at serialization time.)
                 Map.copyOf(entity.getAttributes()),
-                entity.isActive());
+                entity.isActive(),
+                null);
+    }
+
+    /** As {@link #from}, and includes what the SKU cost. Never used on a public route. */
+    public static VariantResponse forSeller(com.clickkart.product.entity.ProductVariantEntity entity) {
+        VariantResponse base = from(entity);
+        return new VariantResponse(
+                base.sku(), base.variantName(), base.mrp(), base.sellingPrice(),
+                base.discountPercentage(), base.attributes(), base.active(),
+                entity.getCostPrice());
     }
 }

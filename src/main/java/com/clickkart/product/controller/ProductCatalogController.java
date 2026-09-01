@@ -1,6 +1,7 @@
 // src/main/java/com/clickkart/product/controller/ProductCatalogController.java
 package com.clickkart.product.controller;
 
+import org.springframework.util.MultiValueMap;
 import com.clickkart.product.constant.ApiPaths;
 import com.clickkart.product.constant.MdcKeys;
 import com.clickkart.product.dto.ApiResponse;
@@ -55,7 +56,7 @@ public class ProductCatalogController {
              * <p>A flat map rather than a structured body because this is a GET a shopper can
              * bookmark and share - a filtered listing that cannot be linked to is half a feature.
              */
-            @RequestParam(required = false) Map<String, List<String>> allParams,
+            @RequestParam(required = false) MultiValueMap<String, String> allParams,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             Pageable pageable,
@@ -89,10 +90,16 @@ public class ProductCatalogController {
     /**
      * Pulls the {@code prop.*} params out of the query string.
      *
+     * <p><strong>MultiValueMap, not {@code Map<String, List<String>>}.</strong> Spring only ever
+     * populates the latter with one String per key - the declared {@code List} is erased, so it
+     * compiles, binds, and then throws {@code ClassCastException} on the first read. Every
+     * filtered search failed with a 500 that way: text query, brand, price and facets alike,
+     * because they all pass through here. Only a request with no parameters at all worked.
+     *
      * <p>Prefixed rather than free-form so a property can never collide with a real parameter -
      * a catalogue with a property called "query" or "page" would otherwise silently break paging.
      */
-    private static Map<String, List<String>> propertyFacets(Map<String, List<String>> params) {
+    private static Map<String, List<String>> propertyFacets(MultiValueMap<String, String> params) {
         if (params == null || params.isEmpty()) {
             return Map.of();
         }
@@ -101,7 +108,8 @@ public class ProductCatalogController {
             if (key != null && key.startsWith(PROPERTY_PARAM_PREFIX) && values != null && !values.isEmpty()) {
                 String name = key.substring(PROPERTY_PARAM_PREFIX.length());
                 if (!name.isBlank()) {
-                    facets.put(name, values);
+                    // Copied: the container Spring hands over is reused across the request.
+                    facets.put(name, List.copyOf(values));
                 }
             }
         });
