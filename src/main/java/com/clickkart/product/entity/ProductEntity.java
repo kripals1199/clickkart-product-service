@@ -1,6 +1,14 @@
 // src/main/java/com/clickkart/product/entity/ProductEntity.java
 package com.clickkart.product.entity;
 
+import com.clickkart.product.enums.DeliveryOption;
+import com.clickkart.product.enums.MediaType;
+import com.clickkart.product.enums.ProductType;
+import com.clickkart.product.enums.WarrantyType;
+import jakarta.persistence.OrderBy;
+import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.Optional;
 import com.clickkart.product.enums.ProductStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.CollectionTable;
@@ -98,6 +106,115 @@ public class ProductEntity extends BaseEntity {
     @Column(name = "reviewed_by", length = 64)
     private String reviewedBy;
 
+    /** Section 7. What a listing card can afford to render, written rather than truncated. */
+    @Column(name = "short_description", length = 300)
+    private String shortDescription;
+
+    /** Section 6. Decides whether the form asks for weight, dimensions and delivery at all. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "product_type", nullable = false, length = 20)
+    private ProductType productType = ProductType.PHYSICAL;
+
+    /** Section 11. Tax belongs to what is sold; the prices it applies to sit on the variant. */
+    @Column(name = "tax_rate_percent", precision = 5, scale = 2)
+    private BigDecimal taxRatePercent;
+
+    @Column(name = "price_includes_tax", nullable = false)
+    private boolean priceIncludesTax = true;
+
+    /*
+     * Section 18: shipping. Integers in grams and millimetres - carrier rate cards band on whole
+     * units, and a float here rounds differently in two services.
+     */
+
+    @Column(name = "weight_grams")
+    private Integer weightGrams;
+
+    @Column(name = "length_mm")
+    private Integer lengthMm;
+
+    @Column(name = "width_mm")
+    private Integer widthMm;
+
+    @Column(name = "height_mm")
+    private Integer heightMm;
+
+    @Column(name = "package_type", length = 40)
+    private String packageType;
+
+    @Column(name = "shipping_class", length = 40)
+    private String shippingClass;
+
+    @Column(name = "free_shipping", nullable = false)
+    private boolean freeShipping;
+
+    /**
+     * Section 20. Zero is a real answer meaning no returns; null means the seller has not reached
+     * that section yet. The publish checklist has to tell those apart, so this stays a boxed
+     * Integer rather than an int defaulting to nought.
+     */
+    @Column(name = "return_window_days")
+    private Integer returnWindowDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "warranty_type", length = 30)
+    private WarrantyType warrantyType;
+
+    @Column(name = "warranty_months")
+    private Integer warrantyMonths;
+
+    /**
+     * Section 21. Kept apart from name and description: an SEO title is written for a search
+     * result and is routinely not the product name, so deriving one from the other throws away a
+     * deliberate choice the seller made.
+     */
+    @Column(name = "seo_title", length = 200)
+    private String seoTitle;
+
+    @Column(name = "meta_description", length = 320)
+    private String metaDescription;
+
+    /** Sections 26 and 27. What Saved 12 seconds ago and Last edited 2 minutes ago read from. */
+    @Column(name = "last_edited_at")
+    private Instant lastEditedAt;
+
+    /**
+     * Section 18. The delivery speeds this listing supports.
+     *
+     * <p>A set: a product can offer both, and one that is bulky may offer only standard.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "product_delivery_options",
+            joinColumns = @JoinColumn(name = "product_id"),
+            indexes = @Index(name = "idx_product_delivery_options_product", columnList = "product_id"))
+    @Column(name = "delivery_option", nullable = false, length = 20)
+    @Enumerated(EnumType.STRING)
+    private Set<DeliveryOption> deliveryOptions = new LinkedHashSet<>();
+
+    /** Section 21. A row per keyword, so a comma inside one is not a separator. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "product_keywords",
+            joinColumns = @JoinColumn(name = "product_id"),
+            indexes = @Index(name = "idx_product_keywords_product", columnList = "product_id"))
+    @Column(name = "keyword", nullable = false, length = 60)
+    @OrderBy("keyword")
+    private Set<String> keywords = new LinkedHashSet<>();
+
+    /**
+     * Sections 8 to 10. Ordered by the position the seller dragged them into, which is the order
+     * a customer sees - so the ordering is data, not a rendering decision made downstream.
+     */
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("displayOrder asc, id asc")
+    private List<ProductMediaEntity> media = new ArrayList<>();
+
+    /** Section 13. Badges this listing advertises; the terms behind them are not ours to keep. */
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("displayOrder asc, id asc")
+    private List<ProductOfferEntity> offers = new ArrayList<>();
+
     /**
      * Variants are owned by the product and meaningless without it, so the lifecycle cascades and
      * orphans are removed. This is the one place in this platform where a cascade is right: the
@@ -143,6 +260,125 @@ public class ProductEntity extends BaseEntity {
         this.description = description;
         this.brand = brand;
         this.categoryPublicId = categoryPublicId;
+    }
+
+    /** Sections 7 and 6. Copy and form shape, which travel together on every save. */
+    public void updatePresentation(String shortDescription, ProductType productType) {
+        this.shortDescription = shortDescription;
+        this.productType = productType == null ? ProductType.PHYSICAL : productType;
+    }
+
+    /** Section 11. */
+    public void updateTax(BigDecimal taxRatePercent, boolean priceIncludesTax) {
+        this.taxRatePercent = taxRatePercent;
+        this.priceIncludesTax = priceIncludesTax;
+    }
+
+    /**
+     * Section 18.
+     *
+     * <p>A digital product keeps none of this. Cleared rather than refused, because the seller who
+     * switches a listing to digital is not making an error - they are saying these fields stopped
+     * applying, and stale dimensions left behind would quote a delivery date for something that is
+     * never posted.
+     */
+    public void updateShipping(
+            Integer weightGrams, Integer lengthMm, Integer widthMm, Integer heightMm,
+            String packageType, String shippingClass, boolean freeShipping,
+            Collection<DeliveryOption> deliveryOptions) {
+        if (productType == ProductType.DIGITAL) {
+            this.weightGrams = null;
+            this.lengthMm = null;
+            this.widthMm = null;
+            this.heightMm = null;
+            this.packageType = null;
+            this.shippingClass = null;
+            this.freeShipping = false;
+            this.deliveryOptions.clear();
+            return;
+        }
+        this.weightGrams = weightGrams;
+        this.lengthMm = lengthMm;
+        this.widthMm = widthMm;
+        this.heightMm = heightMm;
+        this.packageType = packageType;
+        this.shippingClass = shippingClass;
+        this.freeShipping = freeShipping;
+        this.deliveryOptions.clear();
+        if (deliveryOptions != null) {
+            this.deliveryOptions.addAll(deliveryOptions);
+        }
+    }
+
+    /** Section 20. */
+    public void updateAftersales(
+            Integer returnWindowDays, WarrantyType warrantyType, Integer warrantyMonths) {
+        this.returnWindowDays = returnWindowDays;
+        this.warrantyType = warrantyType;
+        // Months are meaningless without someone to honour them.
+        this.warrantyMonths =
+                warrantyType == null || warrantyType == WarrantyType.NONE ? null : warrantyMonths;
+    }
+
+    /** Section 21. */
+    public void updateSeo(String seoTitle, String metaDescription, Collection<String> keywords) {
+        this.seoTitle = seoTitle;
+        this.metaDescription = metaDescription;
+        this.keywords.clear();
+        if (keywords != null) {
+            this.keywords.addAll(keywords);
+        }
+    }
+
+    /** Sections 26 and 27. Stamped on every write so the header can say when, not just that. */
+    public void touchEdited(Instant at) {
+        this.lastEditedAt = at;
+    }
+
+    public void addMedia(ProductMediaEntity asset) {
+        media.add(asset);
+        asset.assignTo(this);
+    }
+
+    public void removeMedia(ProductMediaEntity asset) {
+        media.remove(asset);
+        asset.assignTo(null);
+    }
+
+    /**
+     * Promotes one asset and demotes the rest.
+     *
+     * <p>One call rather than a flag set on the winner, because two primaries is a state the
+     * gallery cannot render and the partial unique index will not accept - and that failure would
+     * surface as a constraint violation on save, long after the click that caused it.
+     */
+    public void makePrimary(ProductMediaEntity chosen) {
+        for (ProductMediaEntity asset : media) {
+            asset.markPrimary(asset == chosen);
+        }
+    }
+
+    /**
+     * The asset a listing card should show.
+     *
+     * <p>Falls back to the first image when nothing is marked, so a draft the seller has not
+     * finished still previews rather than rendering an empty frame.
+     */
+    public Optional<ProductMediaEntity> primaryImage() {
+        return media.stream()
+                .filter(asset -> asset.getMediaType() == MediaType.IMAGE)
+                .min(Comparator.comparing(ProductMediaEntity::isPrimary).reversed()
+                        .thenComparingInt(ProductMediaEntity::getDisplayOrder));
+    }
+
+    public void addOffer(ProductOfferEntity offer) {
+        offers.add(offer);
+        offer.assignTo(this);
+    }
+
+    public void removeOffer(ProductOfferEntity offer) {
+        offers.remove(offer);
+        offer.assignTo(null);
     }
 
     /**

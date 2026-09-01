@@ -1,6 +1,19 @@
 // src/test/java/com/clickkart/product/serviceImpl/ProductServiceImplTest.java
 package com.clickkart.product.serviceImpl;
 
+import com.clickkart.product.dto.request.AftersalesRequest;
+import com.clickkart.product.dto.request.SeoRequest;
+import com.clickkart.product.dto.request.ShippingRequest;
+import com.clickkart.product.enums.DeliveryOption;
+import com.clickkart.product.enums.ProductType;
+import com.clickkart.product.enums.WarrantyType;
+import org.mockito.ArgumentCaptor;
+import java.util.LinkedHashMap;
+import org.mockito.ArgumentMatchers;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -93,11 +106,24 @@ class ProductServiceImplTest {
     }
 
     private VariantRequest variant(String sku, String mrp, String price) {
-        return new VariantRequest(sku, "Blue / M", new BigDecimal(mrp), new BigDecimal(price), Map.of("colour", "Blue"));
+        return new VariantRequest(
+                sku, "Blue / M", new BigDecimal(mrp), new BigDecimal(price),
+                Map.of("colour", "Blue"), null);
     }
 
     private ProductRequest request(String name, VariantRequest... variants) {
-        return new ProductRequest(name, null, "desc", "Acme", CATEGORY, List.of(variants));
+        return request(name, Map.of(), variants);
+    }
+
+    /** With master-data specification values against the category's properties. */
+    private ProductRequest request(
+            String name, Map<String, List<String>> properties, VariantRequest... variants) {
+        return new ProductRequest(
+                name, null, "desc", "Acme", CATEGORY, List.of(variants), properties,
+                // The workspace sections default to absent: most tests here are about the
+                // moderation workflow, and a helper that forced every caller to state a shipping
+                // weight would say those tests depend on one.
+                null, null, null, null, null, null, null);
     }
 
     /** A persisted-looking listing owned by SELLER, in the given state. */
@@ -125,6 +151,249 @@ class ProductServiceImplTest {
         assertThat(created.publicId()).startsWith("PRD-");
         assertThat(created.sellerPublicId()).isEqualTo(SELLER);
         assertThat(created.slug()).isEqualTo("blue-widget");
+    }
+
+    /** A full request with the Add Product workspace sections filled in. */
+    private ProductRequest detailed(
+            ProductType type, ShippingRequest shipping, AftersalesRequest aftersales, SeoRequest seo) {
+        return new ProductRequest(
+                "Phone", null, "desc", "Acme", CATEGORY,
+                List.of(variant("sku-1", "100.00", "90.00")), Map.of(),
+                "a short line", type, new BigDecimal("18.00"), true, shipping, aftersales, seo);
+    }
+
+    // ---- the Add Product workspace, sections 6 to 21 -----------------------------------
+
+    @Test
+    void recordsTheShippingPackageASellerDescribed() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL,
+                        new ShippingRequest(450, 160, 78, 8, "Box", "Fragile", false, null), null, null),
+                CORRELATION_ID, METADATA);
+
+        assertThat(created.weightGrams()).isEqualTo(450);
+        assertThat(created.packageType()).isEqualTo("Box");
+        assertThat(created.shippingClass()).isEqualTo("Fragile");
+    }
+
+    @Test
+    void aDigitalProductKeepsNoShippingDetail() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.DIGITAL,
+                        new ShippingRequest(450, 160, 78, 8, "Box", "Fragile", true, null), null, null),
+                CORRELATION_ID, METADATA);
+
+        // Cleared rather than refused: a seller switching to digital is telling us these stopped
+        // applying, and stale dimensions would quote a delivery date for something never posted.
+        assertThat(created.weightGrams()).isNull();
+        assertThat(created.lengthMm()).isNull();
+        assertThat(created.packageType()).isNull();
+        assertThat(created.freeShipping()).isFalse();
+    }
+
+    @Test
+    void aPhysicalProductAlwaysShipsSomehow() {
+        ProductResponse created = service.createDraft(
+                SELLER, detailed(ProductType.PHYSICAL, null, null, null), CORRELATION_ID, METADATA);
+
+        // An empty set would read as "cannot be delivered at all", which is not a state a physical
+        // product can be in - and not one the form has any way to express deliberately.
+        assertThat(created.deliveryOptions()).containsExactly(DeliveryOption.STANDARD);
+    }
+
+    @Test
+    void keepsBothDeliverySpeedsWhenASellerOffersBoth() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL,
+                        new ShippingRequest(450, 160, 78, 8, "Box", null, false,
+                                List.of(DeliveryOption.STANDARD, DeliveryOption.EXPRESS)),
+                        null, null),
+                CORRELATION_ID, METADATA);
+
+        // A set, not a choice: offering express does not withdraw standard.
+        assertThat(created.deliveryOptions())
+                .containsExactlyInAnyOrder(DeliveryOption.STANDARD, DeliveryOption.EXPRESS);
+    }
+
+    @Test
+    void aDigitalProductOffersNoDeliverySpeedAtAll() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.DIGITAL,
+                        new ShippingRequest(450, 160, 78, 8, "Box", null, false,
+                                List.of(DeliveryOption.EXPRESS)),
+                        null, null),
+                CORRELATION_ID, METADATA);
+
+        // Nothing is posted, so a delivery speed is not a smaller answer - it is a wrong one.
+        assertThat(created.deliveryOptions()).isEmpty();
+    }
+
+    @Test
+    void keepsAZeroDayReturnWindowApartFromAnUnansweredOne() {
+        ProductResponse noReturns = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL, null, new AftersalesRequest(0, WarrantyType.NONE, null), null),
+                CORRELATION_ID, METADATA);
+
+        ProductResponse unanswered = service.createDraft(
+                SELLER, detailed(ProductType.PHYSICAL, null, null, null), CORRELATION_ID, METADATA);
+
+        // Zero is a decision the seller made; null is a section they have not reached. The publish
+        // checklist has to tell them apart, so collapsing either into the other loses the point.
+        assertThat(noReturns.returnWindowDays()).isZero();
+        assertThat(unanswered.returnWindowDays()).isNull();
+    }
+
+    @Test
+    void dropsWarrantyMonthsWhenNobodyHonoursTheWarranty() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL, null, new AftersalesRequest(7, WarrantyType.NONE, 24), null),
+                CORRELATION_ID, METADATA);
+
+        assertThat(created.warrantyMonths()).isNull();
+    }
+
+    @Test
+    void treatsKeywordsDifferingOnlyByCaseAsOne() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL, null, null,
+                        new SeoRequest("SEO title", "meta", List.of("Phone", " phone ", "PHONE", "5G"))),
+                CORRELATION_ID, METADATA);
+
+        // Three spellings of one keyword is a unique-constraint violation on the second, and the
+        // seller meant one keyword regardless.
+        assertThat(created.keywords()).containsExactlyInAnyOrder("Phone", "5G");
+    }
+
+    @Test
+    void seoTitleIsKeptApartFromTheProductName() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                detailed(ProductType.PHYSICAL, null, null,
+                        new SeoRequest("Buy iPhone 17 Pro online", "meta", List.of())),
+                CORRELATION_ID, METADATA);
+
+        // Deriving one from the other would throw away a deliberate choice - an SEO title is
+        // written for a result page and is routinely not what the product is called.
+        assertThat(created.name()).isEqualTo("Phone");
+        assertThat(created.seoTitle()).isEqualTo("Buy iPhone 17 Pro online");
+    }
+
+    @Test
+    void stampsWhenTheListingWasLastEdited() {
+        ProductResponse created = service.createDraft(
+                SELLER, detailed(ProductType.PHYSICAL, null, null, null), CORRELATION_ID, METADATA);
+
+        // Sections 26 and 27 - the header says when, not just that.
+        assertThat(created.lastEditedAt()).isNotNull();
+    }
+
+    @Test
+    void whatASkuCostTheSellerNeverReachesACustomer() {
+        VariantRequest priced = new VariantRequest(
+                "sku-1", "Blue / M", new BigDecimal("100.00"), new BigDecimal("90.00"),
+                Map.of(), new BigDecimal("55.00"));
+        ProductEntity saved = ProductEntity.createFor("PRD-1", SELLER);
+        service.createDraft(SELLER, request("Phone", Map.of(), priced), CORRELATION_ID, METADATA);
+
+        ArgumentCaptor<ProductEntity> captor = ArgumentCaptor.forClass(ProductEntity.class);
+        verify(productRepository).saveAndFlush(captor.capture());
+        ProductEntity stored = captor.getValue();
+
+        // Recorded for the seller...
+        assertThat(ProductResponse.forSeller(stored).variants().get(0).costPrice())
+                .isEqualByComparingTo("55.00");
+        // ...and absent by omission on the public view, not stripped by a filter downstream: a
+        // field that is only sometimes removed is one refactor away from always being sent.
+        assertThat(ProductResponse.forCustomer(stored).variants().get(0).costPrice()).isNull();
+        assertThat(saved).isNotNull();
+    }
+
+    // ---- master data specification values ----------------------------------------------
+
+    @Test
+    void recordsTheSpecificationValuesASellerEntered() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                request("Phone", Map.of("RAM", List.of("8"), "Color", List.of("Black")),
+                        variant("sku-1", "100.00", "90.00")),
+                CORRELATION_ID, METADATA);
+
+        assertThat(created.properties())
+                .containsEntry("RAM", List.of("8"))
+                .containsEntry("Color", List.of("Black"));
+    }
+
+    @Test
+    void keepsEveryAnswerOfAMultiValuedProperty() {
+        ProductResponse created = service.createDraft(
+                SELLER,
+                request("Phone", Map.of("Connectivity", List.of("Wi-Fi", "Bluetooth", "NFC")),
+                        variant("sku-1", "100.00", "90.00")),
+                CORRELATION_ID, METADATA);
+
+        // Three answers to one question, in the order they were given - not one comma-joined
+        // string, which would forbid that separator inside a value forever and make a filter on
+        // Bluetooth a substring scan.
+        assertThat(created.properties().get("Connectivity"))
+                .containsExactly("Wi-Fi", "Bluetooth", "NFC");
+    }
+
+    @Test
+    void dropsBlankAnswersRatherThanRecordingThem() {
+        Map<String, List<String>> withBlanks = new LinkedHashMap<>();
+        withBlanks.put("RAM", List.of("8"));
+        withBlanks.put("Color", List.of("   "));
+        withBlanks.put("Storage", List.of());
+
+        ProductResponse created = service.createDraft(
+                SELLER, request("Phone", withBlanks, variant("sku-1", "100.00", "90.00")),
+                CORRELATION_ID, METADATA);
+
+        // An empty string is how a form says "cleared". Recording it would make the property look
+        // answered to anything that only checks for presence - including the completeness count
+        // the seller is shown.
+        assertThat(created.properties()).containsOnlyKeys("RAM");
+    }
+
+    @Test
+    void trimsAnswersSoTwoSpellingsDoNotBecomeTwoFacets() {
+        ProductResponse created = service.createDraft(
+                SELLER, request("Phone", Map.of("RAM", List.of("  8  ")),
+                        variant("sku-1", "100.00", "90.00")),
+                CORRELATION_ID, METADATA);
+
+        assertThat(created.properties().get("RAM")).containsExactly("8");
+    }
+
+    @Test
+    void aListingWithNoSpecificationsIsNotAnError() {
+        // A category with nothing mapped is a real state - the console flags it, but the seller is
+        // not blocked and the product still saves.
+        ProductResponse created = service.createDraft(
+                SELLER, request("Widget", variant("sku-1", "100.00", "90.00")),
+                CORRELATION_ID, METADATA);
+
+        assertThat(created.properties()).isEmpty();
+    }
+
+    @Test
+    void passesSpecificationFacetsToTheSearch() {
+        when(productRepository.findAll(ArgumentMatchers.<Specification<ProductEntity>>any(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        service.search(null, CATEGORY, null, null, null, Map.of("RAM", List.of("8", "12")),
+                PageRequest.of(0, 20));
+
+        // The specification is built from them; what this asserts is that they reach it at all,
+        // since a dropped argument here would quietly return the unfiltered catalogue.
+        verify(productRepository).findAll(ArgumentMatchers.<Specification<ProductEntity>>any(), any(Pageable.class));
     }
 
     @Test

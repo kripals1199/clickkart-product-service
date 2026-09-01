@@ -1,6 +1,9 @@
 // src/main/java/com/clickkart/product/dto/response/ProductResponse.java
 package com.clickkart.product.dto.response;
 
+import com.clickkart.product.enums.ProductType;
+import com.clickkart.product.enums.WarrantyType;
+import java.math.BigDecimal;
 import com.clickkart.product.entity.ProductEntity;
 import com.clickkart.product.entity.ProductPropertyValue;
 import com.clickkart.product.enums.ProductStatus;
@@ -37,7 +40,40 @@ public record ProductResponse(
         String rejectionReason,
         Instant reviewedAt,
         Instant createdDate,
-        Instant updatedDate) {
+        Instant updatedDate,
+
+        /* ---- the Add Product workspace, sections 6 to 21 ---- */
+
+        String shortDescription,
+        ProductType productType,
+        BigDecimal taxRatePercent,
+        boolean priceIncludesTax,
+
+        Integer weightGrams,
+        Integer lengthMm,
+        Integer widthMm,
+        Integer heightMm,
+        String packageType,
+        String shippingClass,
+        boolean freeShipping,
+        java.util.List<com.clickkart.product.enums.DeliveryOption> deliveryOptions,
+
+        Integer returnWindowDays,
+        WarrantyType warrantyType,
+        Integer warrantyMonths,
+
+        String seoTitle,
+        String metaDescription,
+        List<String> keywords,
+
+        /** Sections 8 to 10, in the order the seller arranged them. */
+        List<MediaResponse> media,
+
+        /** Section 13. A customer sees only the live ones; a seller sees all of them. */
+        List<OfferResponse> offers,
+
+        /** Sections 26 and 27. Null until the listing has been saved at least once. */
+        Instant lastEditedAt) {
 
     /** Public catalog view - no moderation detail, and only variants that are on sale. */
     public static ProductResponse forCustomer(ProductEntity entity) {
@@ -58,7 +94,33 @@ public record ProductResponse(
                 null,
                 null,
                 entity.getCreatedDate(),
-                entity.getUpdatedDate());
+                entity.getUpdatedDate(),
+                entity.getShortDescription(),
+                entity.getProductType(),
+                entity.getTaxRatePercent(),
+                entity.isPriceIncludesTax(),
+                entity.getWeightGrams(),
+                entity.getLengthMm(),
+                entity.getWidthMm(),
+                entity.getHeightMm(),
+                entity.getPackageType(),
+                entity.getShippingClass(),
+                entity.isFreeShipping(),
+                List.copyOf(entity.getDeliveryOptions()),
+                entity.getReturnWindowDays(),
+                entity.getWarrantyType(),
+                entity.getWarrantyMonths(),
+                entity.getSeoTitle(),
+                entity.getMetaDescription(),
+                List.copyOf(entity.getKeywords()),
+                entity.getMedia().stream().map(MediaResponse::from).toList(),
+                // An offer whose window has closed is not shown at all - a customer reading a
+                // badge for a deal that ended is worse than seeing no badge.
+                entity.getOffers().stream()
+                        .filter(offer -> offer.isLiveAt(Instant.now()))
+                        .map(offer -> OfferResponse.from(offer, Instant.now()))
+                        .toList(),
+                null);
     }
 
     /** Seller and operator view - every variant, plus why it was sent back. */
@@ -72,12 +134,37 @@ public record ProductResponse(
                 entity.getCategoryPublicId(),
                 entity.getSellerPublicId(),
                 entity.getStatus(),
-                entity.getVariants().stream().map(VariantResponse::from).toList(),
+                entity.getVariants().stream().map(VariantResponse::forSeller).toList(),
                 propertiesOf(entity),
                 entity.getRejectionReason(),
                 entity.getReviewedAt(),
                 entity.getCreatedDate(),
-                entity.getUpdatedDate());
+                entity.getUpdatedDate(),
+                entity.getShortDescription(),
+                entity.getProductType(),
+                entity.getTaxRatePercent(),
+                entity.isPriceIncludesTax(),
+                entity.getWeightGrams(),
+                entity.getLengthMm(),
+                entity.getWidthMm(),
+                entity.getHeightMm(),
+                entity.getPackageType(),
+                entity.getShippingClass(),
+                entity.isFreeShipping(),
+                List.copyOf(entity.getDeliveryOptions()),
+                entity.getReturnWindowDays(),
+                entity.getWarrantyType(),
+                entity.getWarrantyMonths(),
+                entity.getSeoTitle(),
+                entity.getMetaDescription(),
+                List.copyOf(entity.getKeywords()),
+                entity.getMedia().stream().map(MediaResponse::from).toList(),
+                // Every offer, live or not: the seller is editing them and has to see the ones
+                // that have not started and the ones that have finished.
+                entity.getOffers().stream()
+                        .map(offer -> OfferResponse.from(offer, Instant.now()))
+                        .toList(),
+                entity.getLastEditedAt());
     }
     /**
      * Regroups the flat value rows back into one entry per property.

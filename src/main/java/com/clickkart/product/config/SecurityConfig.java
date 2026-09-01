@@ -78,7 +78,14 @@ public class SecurityConfig {
     private static final List<String> CATALOG_READ_PATHS = List.of(
             ApiPaths.SEARCH,
             ApiPaths.BASE + "/slug/*",
-            ApiPaths.BASE + "/PRD-*");
+            ApiPaths.BASE + "/PRD-*",
+            // A product image has to render for a signed-out shopper. The filename is a UUID, so
+            // an unpublished draft is not enumerable even though the route is open.
+            ApiPaths.MEDIA_FILE,
+            // The customer-facing brand filter reads this too, so it cannot need a token. Only
+            // GET is permitted here; POST falls through to authenticated, and the controller
+            // requires ROLE_SELLER on top.
+            ApiPaths.BRANDS);
 
     private static final String ADMIN_WILDCARD = ApiPaths.ADMIN_BASE + "/**";
 

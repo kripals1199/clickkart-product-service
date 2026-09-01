@@ -42,4 +42,25 @@ public class ProductProperties {
 
     /** CIDRs whose {@code X-Forwarded-For} is believed. Empty means trust nothing. */
     private List<String> trustedProxyCidrs = new ArrayList<>();
+
+    /**
+     * Where uploaded product media is written.
+     *
+     * <p>A local directory until the platform has an object store. Deliberately outside any
+     * served webroot: files here are handed back through a controller that sets the content type
+     * we determined, never by a static handler that would trust the extension.
+     */
+    private String mediaDirectory = "./data/product-media";
+
+    /** Prefix the stored filename is appended to, to form the URL recorded against a product. */
+    private String mediaBaseUrl = "/api/v1/products/media";
+
+    /**
+     * Largest upload accepted, in bytes.
+     *
+     * <p>8MB. Large enough for a high-resolution product photograph, small enough that a seller
+     * cannot fill the disk by looping an upload - the limit exists for that, not for the honest
+     * case.
+     */
+    private long maxMediaBytes = 8L * 1024 * 1024;
 }

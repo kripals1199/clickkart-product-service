@@ -1,6 +1,10 @@
 // src/main/java/com/clickkart/product/repository/ProductRepository.java
 package com.clickkart.product.repository;
 
+import java.util.List;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Query;
+import com.clickkart.product.entity.ProductMediaEntity;
 import com.clickkart.product.entity.ProductEntity;
 import com.clickkart.product.enums.ProductStatus;
 import java.util.Optional;
@@ -33,4 +37,21 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long>, J
     Page<ProductEntity> findByStatus(ProductStatus status, Pageable pageable);
 
     long countBySellerPublicIdAndStatus(String sellerPublicId, ProductStatus status);
+
+    /**
+     * Every media asset belonging to one seller, newest first.
+     *
+     * <p>Section 8's media library. Scoped to the seller in the query rather than filtered
+     * afterwards - a library that fetched everything and then removed other sellers' images
+     * would have already read them, and one missed filter downstream would leak them.
+     */
+    @Query("""
+            select m from ProductMediaEntity m
+              join m.product p
+             where p.sellerPublicId = :sellerPublicId
+               and m.mediaType = com.clickkart.product.enums.MediaType.IMAGE
+             order by m.id desc
+            """)
+    List<ProductMediaEntity> findMediaForSeller(
+            @Param("sellerPublicId") String sellerPublicId, Pageable pageable);
 }

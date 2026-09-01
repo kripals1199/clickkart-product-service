@@ -51,4 +51,15 @@ public record VariantRequest(
                 BigDecimal sellingPrice,
 
         /** Free-form options, e.g. {@code {colour: Blue, size: M}}. Meaningful keys differ per category. */
-        @Size(max = 20, message = "a variant may have at most 20 attributes") Map<String, String> attributes) {}
+        @Size(max = 20, message = "a variant may have at most 20 attributes") Map<String, String> attributes,
+
+        /**
+         * Section 11. What this SKU cost the seller. Optional, and never returned to a customer.
+         *
+         * <p>Not validated against the selling price: selling below cost is a real decision - a
+         * loss leader, or clearing old stock - and refusing it would block a legitimate listing.
+         */
+        @DecimalMin(value = "0.00", message = "cannot be negative")
+        @DecimalMax(value = "9999999999.99", message = "is too large")
+        @Digits(integer = 10, fraction = 2, message = "must have at most 2 decimal places")
+        BigDecimal costPrice) {}

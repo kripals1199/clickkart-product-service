@@ -69,6 +69,15 @@ public class ProductVariantEntity extends BaseEntity {
     private BigDecimal sellingPrice;
 
     /**
+     * Section 11. What this SKU costs the seller, for their own margin - never shown to a customer.
+     *
+     * <p>Per variant rather than per product because that is where it differs: the 256GB model
+     * costs more to source than the 128GB and shares nothing with it but a product row.
+     */
+    @Column(name = "cost_price", precision = 12, scale = 2)
+    private BigDecimal costPrice;
+
+    /**
      * The options this variant represents, e.g. {@code {colour: Blue, size: M}}.
      *
      * <p>A key/value table rather than columns, because the meaningful options differ per category -
@@ -101,6 +110,7 @@ public class ProductVariantEntity extends BaseEntity {
         this.product = product;
     }
 
+    /** Cost unchanged. The variant matrix edits price far more often than it edits margin. */
     public void update(String variantName, BigDecimal mrp, BigDecimal sellingPrice, Map<String, String> attributes) {
         this.variantName = variantName;
         // Normalised to the column's scale on the way in. Accepting 199.999 and letting the database
@@ -108,6 +118,14 @@ public class ProductVariantEntity extends BaseEntity {
         this.mrp = mrp.setScale(2, java.math.RoundingMode.HALF_UP);
         this.sellingPrice = sellingPrice.setScale(2, java.math.RoundingMode.HALF_UP);
         this.attributes = attributes == null ? new LinkedHashMap<>() : new LinkedHashMap<>(attributes);
+    }
+
+    /** As above, and records what this SKU cost the seller. */
+    public void update(
+            String variantName, BigDecimal mrp, BigDecimal sellingPrice,
+            Map<String, String> attributes, BigDecimal costPrice) {
+        update(variantName, mrp, sellingPrice, attributes);
+        this.costPrice = costPrice == null ? null : costPrice.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     public void activate(boolean active) {

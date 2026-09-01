@@ -1,6 +1,9 @@
 // src/main/java/com/clickkart/product/serviceImpl/ProductServiceImpl.java
 package com.clickkart.product.serviceImpl;
 
+import com.clickkart.product.dto.request.AftersalesRequest;
+import com.clickkart.product.dto.request.SeoRequest;
+import com.clickkart.product.dto.request.ShippingRequest;
 import com.clickkart.product.config.ProductProperties;
 import com.clickkart.product.constant.LoggerNames;
 import com.clickkart.product.dto.request.ProductRequest;
@@ -108,6 +111,7 @@ public class ProductServiceImpl implements ProductService {
                 trimToNull(request.brand()), request.categoryPublicId().trim());
         request.variants().forEach(variantRequest -> product.addVariant(buildVariant(variantRequest)));
         product.replaceProperties(toPropertyValues(request.properties()));
+        applyListingDetail(product, request);
         productRepository.saveAndFlush(product);
 
         // The category is NOT validated here. Drafting against a category that is being reorganised
@@ -153,7 +157,14 @@ public class ProductServiceImpl implements ProductService {
         // is also what drops values that no longer apply after a category change - the form has
         // already stopped sending them.
         product.replaceProperties(toPropertyValues(request.properties()));
-        productRepository.saveAndFlush(product);
+        applyListingDetail(product, request);
+        // flush(), not saveAndFlush(). The product is already managed, so save() would call
+        // merge() - and merge re-snapshots the element collections, which erases the pending
+        // changes to keywords, delivery options and property values before Hibernate ever looks
+        // for them. No DELETE is issued and the old rows survive: the seller removes a
+        // specification, saves, and the value is still there. Measured against Postgres, not
+        // deduced - the same clear() persists correctly the moment merge is out of the way.
+        productRepository.flush();
 
         auditTrailService.record(correlationId, sellerPublicId, ProductAuditAction.PRODUCT_UPDATED, metadata,
                 "publicId=" + publicId + " slug=" + slug + " variants=" + request.variants().size());
@@ -329,7 +340,9 @@ public class ProductServiceImpl implements ProductService {
                             + " for SKU " + sku);
         }
         ProductVariantEntity variant = ProductVariantEntity.createWithSku(sku);
-        variant.update(request.variantName().trim(), request.mrp(), request.sellingPrice(), request.attributes());
+        variant.update(
+                request.variantName().trim(), request.mrp(), request.sellingPrice(),
+                request.attributes(), request.costPrice());
         return variant;
     }
 
@@ -396,6 +409,81 @@ public class ProductServiceImpl implements ProductService {
      * properties apply and what each accepts; restating those rules in this service would create a
      * second answer to the same question, and the two would drift.
      */
+    /**
+     * Applies sections 6, 7, 11, 18, 20 and 21 of the Add Product workspace.
+     *
+     * <p>Every section is applied wholesale, exactly like the properties above: a save carries
+     * the complete state of the form, so a section the seller cleared arrives null and is
+     * cleared rather than quietly kept. Autosave relies on this - a partial merge cannot express
+     * "this field is now empty", which is the one thing an autosaving form does constantly.
+     *
+     * <p>Presentation is applied before shipping, and the order matters: switching a listing to
+     * DIGITAL is what tells the entity to drop the dimensions, and doing it the other way round
+     * would write them and then never clear them.
+     */
+    private void applyListingDetail(ProductEntity product, ProductRequest request) {
+        product.updatePresentation(trimToNull(request.shortDescription()), request.productType());
+        product.updateTax(
+                request.taxRatePercent(),
+                // Absent means "unchanged from the sensible default", not "false". A tri-state
+                // Boolean here is what lets the form omit a section it has not rendered yet.
+                request.priceIncludesTax() == null || request.priceIncludesTax());
+
+        ShippingRequest shipping = request.shipping();
+        product.updateShipping(
+                shipping == null ? null : shipping.weightGrams(),
+                shipping == null ? null : shipping.lengthMm(),
+                shipping == null ? null : shipping.widthMm(),
+                shipping == null ? null : shipping.heightMm(),
+                shipping == null ? null : trimToNull(shipping.packageType()),
+                shipping == null ? null : trimToNull(shipping.shippingClass()),
+                shipping != null && shipping.freeShipping(),
+                // Empty means standard. A physical product that can be delivered no way at all is
+                // not a state the form can express, so it is not one worth storing.
+                shipping == null || shipping.deliveryOptions() == null || shipping.deliveryOptions().isEmpty()
+                        ? java.util.List.of(com.clickkart.product.enums.DeliveryOption.STANDARD)
+                        : shipping.deliveryOptions());
+
+        AftersalesRequest aftersales = request.aftersales();
+        product.updateAftersales(
+                aftersales == null ? null : aftersales.returnWindowDays(),
+                aftersales == null ? null : aftersales.warrantyType(),
+                aftersales == null ? null : aftersales.warrantyMonths());
+
+        SeoRequest seo = request.seo();
+        product.updateSeo(
+                seo == null ? null : trimToNull(seo.seoTitle()),
+                seo == null ? null : trimToNull(seo.metaDescription()),
+                seo == null ? List.of() : normaliseKeywords(seo.keywords()));
+
+        product.touchEdited(java.time.Instant.now());
+    }
+
+    /**
+     * Trims, drops blanks and de-duplicates case-insensitively, keeping the seller's order.
+     *
+     * <p>"Phone", "phone" and " phone " are one keyword. Storing three costs a unique-constraint
+     * violation on the second, and storing them in a set that ignores case would return them in
+     * an order the seller did not choose.
+     */
+    private static List<String> normaliseKeywords(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return List.of();
+        }
+        Set<String> seen = new java.util.LinkedHashSet<>();
+        List<String> kept = new java.util.ArrayList<>();
+        for (String keyword : keywords) {
+            if (keyword == null || keyword.isBlank()) {
+                continue;
+            }
+            String trimmed = keyword.trim();
+            if (seen.add(trimmed.toLowerCase(java.util.Locale.ROOT))) {
+                kept.add(trimmed);
+            }
+        }
+        return kept;
+    }
+
     private static List<ProductPropertyValue> toPropertyValues(Map<String, List<String>> properties) {
         if (properties == null || properties.isEmpty()) {
             return List.of();
